@@ -1,17 +1,43 @@
-// Vertex & Fragment shader source codes
+// vertex shader source codes
 var VSHADER_SOURCE = `
-attribute vec4 a_Position;
+  attribute vec4 a_Position;
+  attribute vec2 a_UV;
+  attribute vec4 a_Color;
+  varying vec2 v_UV;
+  varying vec4 v_Color;
   uniform mat4 u_ModelMatrix;
   uniform mat4 u_GlobalRotateMatrix;
+  uniform mat4 u_ViewMatrix;
+  uniform mat4 u_ProjectionMatrix;
   void main() {
-    gl_Position = u_GlobalRotateMatrix * u_ModelMatrix * a_Position;
+    gl_Position = u_ProjectionMatrix * u_ViewMatrix * u_GlobalRotateMatrix * u_ModelMatrix * a_Position;
+    v_UV = a_UV;
+    v_Color = a_Color;
   }`;
 
+// fragment shader source code
 var FSHADER_SOURCE = `
   precision mediump float;
+  varying vec2 v_UV;
+  varying vec4 v_Color;
   uniform vec4 u_FragColor;
+  uniform sampler2D u_Sampler0;
+  uniform sampler2D u_Sampler1;
+  uniform int u_WhichTexture;
   void main() {
     gl_FragColor = u_FragColor;
+    if (u_WhichTexture == -2) {
+      gl_FragColor = u_FragColor;
+    } else if (u_WhichTexture == -1) {
+      gl_FragColor = u_FragColor;
+    } else if (u_WhichTexture == 0) {
+      //gl_FragColor = v_Color;
+      gl_FragColor = texture2D(u_Sampler0, v_UV);
+    } else if (u_WhichTexture == 1) {
+      gl_FragColor = texture2D(u_Sampler1, v_UV);
+    } else{
+      gl_FragColor = vec4(1,0,0,1); //error, redish
+    }
   }`;
 
 // global vars for WebGL context & shader program attributes/uniforms
@@ -21,8 +47,22 @@ let a_Position;
 let u_FragColor;
 let u_Size;
 let u_ModelMatrix;
+let u_ProjectionMatrix;
+let u_ViewMatrix;
 let u_GlobalRotateMatrix;
-let g_rotateMatrix 
+let g_rotateMatrix = 25;
+let g_time;
+
+let num_texts = 2;
+let u_Samplers = [];
+let gl_TEXTURES;
+let textures = ["./blueflower.jpg"];
+let u_WhichTexture = 0;
+
+// Camera
+var g_eye = [0,0,3];
+var g_at = [0,0,-100];
+var g_up = [0,1,0];
 
 /* 
 REQUIREMENTS FOR ASGN 3A
@@ -40,119 +80,104 @@ function main() {
       return;
   }
   actionsForHTMLUI();
-  var canvas = document.getElementById('webgl');
+  document.onkeydown = keydown;
+  initTextures();
+  gl.clearColor(75/255, 97/255, 84/255, 1.0);
 
-  canvas.onmousemove = function (ev){if(ev.buttons == 1)click(ev);}
-  gl.enable(gl.DEPTH_TEST);
-  gl.clearDepth(1.0);
-  
+  function initGeometry(){
+    cube = new Cube(); 
+  }
 
   function renderScene() {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    g_rotateMatrix = new Matrix4().rotate(g_globalAngle,0,1,0);
-    //g_rotateMatrix = new Matrix4().rotate(g_globalAngle,1,0,0);
-    //g_rotateMatrix = new Matrix4().rotate(g_globalAngle,0,0,1);
+
+    // making the projection  matrix 
+    var projMat = new Matrix4()
+    projMat.setPerspective(50, 1*canvas.width/canvas.height,.1,100);
+    gl.uniformMatrix4fv(u_ProjectionMatrix,false,projMat.elements); // roate it based off that global rotate matrix
+
+    // making the view matrix 
+    var viewMat = new Matrix4()
+    viewMat.setLookAt(g_eye[0],g_eye[1],g_eye[2], g_at[0],g_at[1],g_at[2] , g_up[0],g_up[1],g_up[2]);
+    gl.uniformMatrix4fv(u_ViewMatrix,false,viewMat.elements); // roate it based off that global rotate matrix
+
+    // rotate matrix
+    g_rotateMatrix = new Matrix4().rotate(1,0,1,0);
     gl.uniformMatrix4fv(u_GlobalRotateMatrix, false, g_rotateMatrix.elements);
-    ear_right.render();
-    ear_left.render();
-    inner_ear_right.render();
-    inner_ear_left.render();
-    head.render();
-    face.render();
-    body.render();
-    tummy.render();
-    right.render();
-    left.render();
-    lower_right.render();
-    lower_left.render();
-    right_hand.render();
-    left_hand.render();
-    right_leg.render();
-    left_leg.render();
-    right_foot.render();
-    left_foot.render();
+    
+    cube.color = [50/255,50/255,50/255,1];
+    cube.matrix.translate(-0.5,-0.2,0);
+    cube.render();
+    
   }
 
   var tick = function(){
     let startTime = performance.now();
-    if(!g_animate){return;}
 
     var now = Date.now();
     var elapsed = now - g_time;// in milliseconds
     g_time = now;
-    
-    updateAnimationAngles(now);
-    
+      
+    // init render call
+    initGeometry();
     renderScene();
     requestAnimationFrame(tick);// req that the browser calls tick
     let duration = performance.now() - startTime;
     sendTextToHTML(" ms: " + Math.floor(duration) + " fps: " + Math.floor(10000/duration), "fps");
   };
-  function updateSliderAngles(){
-    
-  }
-  function updateAnimationAngles(now){
-    
-    var angle_step = oscillation(95,85, 1000, now) - g_head_r;
-    g_head_r +=angle_step;
-    monkey_head.rotate(angle_step, 0, 0, 1);
-    angle_step = oscillation(600, 274, 500, now) - g_arm_r1;
-    g_arm_r1+= angle_step;
-    right.matrix = new Matrix4(arms).translate(.25,0,0).rotate(324,0,0,1);
-    left.matrix = new Matrix4(arms).translate(-.25,0,0).rotate(-324,0,0,1);
-    right.matrix.rotate(angle_step,0,0,1);
-    left.matrix.rotate(-angle_step,0,0,1);
-    
-    angle_step = oscillation(360, 274, 500, now) - g_arm_r2;
-    lower_right.matrix = new Matrix4(right.matrix).translate(0,.4,0).rotate(203,1,0,0).rotate(358,0,0,1);
-    lower_left.matrix = new Matrix4(left.matrix).translate(0,.4,0).rotate(203,1,0,0).rotate(-358,0,0,1);
-    lower_right.matrix.rotate(angle_step,0,0,1);
-    lower_left.matrix.rotate(-angle_step,0,0,1);
-    lower_right.matrix.scale(.3,-.4,.3);
-    lower_left.matrix.scale(.3,-.4,.3);
-    right_hand.matrix = new Matrix4(lower_right.matrix).translate(0,.9,0).rotate(150,0,0,1).scale(.23,.3,.23);
-    left_hand.matrix = new Matrix4(lower_left.matrix).translate(0,.9,0).rotate(-150,0,0,1).scale(.23,.3,.23);
 
+  requestAnimationFrame(tick);
 
-    ear_right.matrix = new Matrix4(monkey_head).translate(.5,.85,-.1).rotate(90,1,0,0).scale(.5,.15,.5);
-    ear_left.matrix = new Matrix4(monkey_head).translate(-.5,.85,-.1).rotate(90,1,0,0).scale(.5,.15,.5);
-    head.matrix = new Matrix4(monkey_head).translate(0,.75,0).scale(.25,.25,.23);
-    face.matrix = new Matrix4(head.matrix).translate(0,0,-.7).scale(.85,.8,.7);
-    inner_ear_right.matrix = new Matrix4(ear_right.matrix).translate(0,-.1,0).scale(.7,.7,.7);
-    inner_ear_left.matrix = new Matrix4(ear_left.matrix).translate(0,-.1,0).scale(.7,.7,.7);
-    
-    right.matrix.scale(.3,.5,.3);
-    left.matrix.scale(.3,.5,.3);
-    
-
-    //cubeA.matrix.rotate(newAngle, 1, 0, 0);
-    //cubeB.matrix.rotate(newAngle, 1, 0, 0);
-    //cubeA.matrix.rotate(newAngle, 0, 1, 0);
-    //cubeB.matrix.rotate(newAngle, 0, 1, 0);
-  }
-  // init render call
-  initGeometry();
-  renderScene();
 
   function actionsForHTMLUI(){
-    document.getElementById('angleSlider').addEventListener('input', function() {g_globalAngle = this.value; renderScene();});
-    document.getElementById('anim').addEventListener('mousedown', function() {g_animate = !g_animate; initGeometry(); tick();});
+    //events go here
     
-    document.getElementById('tail_1').addEventListener('input', function() {tail_1 = this.value; initGeometry(); renderScene()});
-    document.getElementById('tail_2').addEventListener('input', function() {tail_2 = this.value; initGeometry(); renderScene()});
-    document.getElementById('tail_3').addEventListener('input', function() {tail_3 = this.value; initGeometry(); renderScene()});
   }
-
-  tick();
+  
+  function keydown(ev){
+    if(ev.keyCode==68){ // D
+        g_eye[0] += 0.5;
+    }else if(ev.keyCode ==65){ // A
+        g_eye[0] -= 0.5;
+    }else if(ev.keyCode == 87){ // W
+        g_eye[2] -= 0.5;
+    }else if(ev.keyCode == 83){ //S
+        g_eye[2] += 0.5;
+    }else{
+        console.log("invalid key");
+    }
+    
+    renderScene();
 }
-
-function oscillation(high, low, freq, now){
-  var amplitude = (high - low) / 2;
-  var middle = low + amplitude;
-  return middle + amplitude * Math.sin(now/freq);
+  //tick();
 }
 function clearCanvas() {
     renderScene(); // Re-render the canvas, which should now be clear
+}
+
+
+
+function loadTexture(image, texNum) {
+  let texture = gl.createTexture();
+  if (!texture) {
+    console.error("Failed to create texture");
+    return -1;
+  }
+
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);   // flip the image's y axis
+  gl.activeTexture(gl_TEXTURES[texNum]);  // enable the texture unit 0
+  gl.bindTexture(gl.TEXTURE_2D, texture); // bind texture obj to the target 
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); // set the texture parameters 
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, image); // set the texture image
+  gl.uniform1i(u_Samplers[texNum], texNum); // set the texture unit 0 to the sampler
+}
+
+function initTextures() {
+  for (let i = 0; i < textures.length; i++) {
+    let img = new Image();
+    img.src = textures[i];
+    img.onload = function() { loadTexture(img, i); }
+  }
 }
 
 
@@ -165,6 +190,7 @@ function setupWebGL() {
     console.log('Failed to get the rendering context for WebGL');
     return false;
   }
+  gl_TEXTURES = [gl.TEXTURE0];
   return true;
 }
 
@@ -184,7 +210,11 @@ function connectVariablesToGLSL() {
     console.log('Failed to get the storage location of a_Position or u_FragColor');
     return false;
   }
-
+  a_UV = gl.getAttribLocation(gl.program, "a_UV");
+  if (a_UV < 0) {
+    console.log('Failed to get the storage location of a_UV');
+    return;
+  }
   u_ModelMatrix = gl.getUniformLocation(gl.program, 'u_ModelMatrix');
   if (!u_ModelMatrix) { 
     console.log('Failed to get the storage location of u_ModelMatrix');
@@ -195,17 +225,46 @@ function connectVariablesToGLSL() {
     console.log('Failed to get the storage location of u_GlobalRotateMatrix');
     return false;
   }
+  u_ProjectionMatrix = gl.getUniformLocation(gl.program, "u_ProjectionMatrix");
+  if (!u_ProjectionMatrix) {
+    console.log('Failed to get the storage location of u_ProjectionMatrix');
+    return;
+  }
+  u_ViewMatrix = gl.getUniformLocation(gl.program, "u_ViewMatrix");
+  if (!u_ProjectionMatrix) {
+    console.log('Failed to get the storage location of u_ViewMatrix');
+    return;
+  }
+  for (let i = 0; i < num_texts; i++) {
+    let u_Sampler = gl.getUniformLocation(gl.program, `u_Sampler${i}`);
+    if (!u_Sampler) {
+      console.error(`Failed to get the storage location of u_Sampler${i}`);
+      return -1;
+    }
+    u_Samplers.push(u_Sampler);
+  }
 
+  u_WhichTexture = gl.getUniformLocation(gl.program, "u_WhichTexture");
+  if (!u_WhichTexture) {
+    console.error('Failed to get the storage location of u_WhichTexture');
+    return -1;
+  }
+  
   var identityM = new Matrix4();
   gl.uniformMatrix4fv(u_ModelMatrix, false, identityM.elements);
 
-  // Set the color for clearing <canvas>
+  // set the color for clearing <canvas>
   gl.clearColor(0.0, 0.0, 0.0, 1.0);
 
   return true;
 }
 
-
+function sendTextToHTML(text,htmlID){
+    var htmlElm = document.getElementById(htmlID);
+    if(!htmlElm){
+        console.log('Failed to get ' + htmlID + ' from HTML');
+        return;
+    }
+    htmlElm.innerHTML = text;
+}
 main();
-
-
